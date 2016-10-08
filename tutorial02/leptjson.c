@@ -2,7 +2,8 @@
 #include <assert.h>  /* assert() */
 #include <stdlib.h>  /* NULL, strtod() */
 #include <string.h>
-
+#include <math.h>
+#include <errno.h> 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
 #define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
@@ -56,18 +57,33 @@ static int lept_parse_literal(lept_context* c, lept_value* v, const char* litera
 static int lept_parse_number(lept_context* c, lept_value* v) {
     char* end;
     /* \TODO validate number */
-	//如果首位不是数字则返回非法值
-	if ((!ISDIGIT(*c->json)) && (*c->json !='-')){
-		return LEPT_PARSE_INVALID_VALUE;
+	const char * p = c->json;
+	if ('-' == *p) p++;
+	if ('0' == *p) p++;
+	else {
+		if (ISDIGIT1TO9(*p)) p++;
+		else
+			return LEPT_PARSE_INVALID_VALUE;
+		for(;ISDIGIT(*p); p++);
 	}
-	//如果最后一位是标点符号，返回非法值
-	if ('.' == c->json[strlen(c->json) -1]){
-		return LEPT_PARSE_INVALID_VALUE;
+	if ('.' == *p){
+		p++;
+		if (!ISDIGIT(*p)) return LEPT_PARSE_INVALID_VALUE;
+		for (p++; ISDIGIT(*p); p++);
 	}
-    v->n = strtod(c->json, &end);
-    if (c->json == end)
-        return LEPT_PARSE_INVALID_VALUE;
-    c->json = end;
+	if('e' == *p || 'E' == *p){
+		p++;
+		if('+' == *p || '-' == *p){
+			p++;
+		}
+		if (!ISDIGIT(*p)) return LEPT_PARSE_INVALID_VALUE;
+		for (p++; ISDIGIT(*p); p++);
+	}
+	errno = 0;
+    v->n = strtod(c->json, NULL);
+    if (errno == ERANGE && (v->n == HUGE_VAL || v->n == -HUGE_VAL))
+        return LEPT_PARSE_NUMBER_TOO_BIG;
+    c->json = p;
     v->type = LEPT_NUMBER;
     return LEPT_PARSE_OK;
 }
